@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://REPLACE_WITH_YOUR_API_URL/api',
+  apiUrl: 'https://link-shortener-0wjb.onrender.com/api',
 };
