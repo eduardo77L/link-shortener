@@ -100,7 +100,7 @@ export class LinksService {
   private toResponse(link: Link): LinkResponse {
     const baseUrl = this.configService.get(
       'APP_URL',
-      'http://localhost:3000/api',
+      'http://localhost:3000',
     );
 
     return {

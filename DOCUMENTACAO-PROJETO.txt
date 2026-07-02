@@ -1,0 +1,440 @@
+================================================================================
+VISÃO GERAL DO PROJETO
+================================================================================
+
+Este é um monorepo Nx com um encurtador de links:
+
+- Frontend Angular (apps/frontend) — interface para criar e listar links
+- API NestJS (apps/api) — cria links, lista links ativos e redireciona
+- PostgreSQL — persiste os links (via Docker localmente)
+- Deploy — API no Render, frontend na Vercel
+
+Fluxo principal: o usuário cola uma URL → a API gera um código de 6 caracteres
+→ retorna shortUrl → ao acessar /api/r/:code, o servidor redireciona para a
+URL original.
+
+Fluxo:
+  Usuário → Frontend Angular → POST/GET /api/links → NestJS API → PostgreSQL
+  Visitante → GET /api/r/:code → NestJS API → 302 redirect → URL original
+
+
+================================================================================
+ARQUIVOS NA RAIZ DO PROJETO
+================================================================================
+
+package.json
+  Dependências e scripts (start, start:api, build, db:up, etc.)
+
+package-lock.json
+  Trava versões exatas das dependências npm.
+
+nx.json
+  Configuração do Nx: cache, plugins, targets padrão.
+
+tsconfig.json
+  TypeScript raiz; referencia projetos filhos.
+
+tsconfig.base.json
+  Opções TS compartilhadas (strict, ES2022, decorators).
+
+eslint.config.mjs
+  Regras ESLint do workspace (inclui @nx/enforce-module-boundaries).
+
+.prettierrc
+  Formatação: aspas simples.
+
+.prettierignore
+  Pastas ignoradas pelo Prettier (dist, .nx, etc.).
+
+.gitignore
+  Ignora node_modules, dist, .env, cache Nx.
+
+.env.example
+  Modelo de variáveis de ambiente (DB, APP_URL, FRONTEND_URL, etc.).
+
+docker-compose.yml
+  Sobe PostgreSQL 16 local na porta 5432 com scripts de init.
+
+render.yaml
+  Blueprint de deploy da API no Render.
+
+vercel.json
+  Build e SPA rewrite do frontend na Vercel.
+
+README.md
+  README padrão do Nx (ainda não documenta o encurtador).
+
+error.log
+  Log de erro gerado em runtime (não faz parte do código-fonte).
+
+
+--------------------------------------------------------------------------------
+.vscode/
+--------------------------------------------------------------------------------
+
+launch.json
+  Config de debug da API via "nx serve api".
+
+extensions.json
+  Extensões recomendadas: Nx Console, Prettier, ESLint.
+
+
+================================================================================
+BANCO DE DADOS (db/)
+================================================================================
+
+db/init/001-create-links.sql
+  Script executado automaticamente ao subir o Docker local. Cria extensão
+  pgcrypto, tabela links (id, code, original_url, created_at, expires_at) e
+  índices.
+
+db/production/001-create-links.sql
+  Mesmo schema para rodar manualmente em produção.
+
+db/production/002-add-expires-at.sql
+  Migração para adicionar expires_at em bancos que já existiam sem essa coluna.
+
+
+================================================================================
+API NESTJS (apps/api/)
+================================================================================
+
+--------------------------------------------------------------------------------
+Configuração
+--------------------------------------------------------------------------------
+
+project.json
+  Targets Nx: build (webpack), serve (node), prune.
+
+webpack.config.js
+  Empacota a API Node com @nx/webpack; saída em dist/apps/api.
+
+tsconfig.json / tsconfig.app.json
+  TypeScript da API (CommonJS, decorators, emitDecoratorMetadata).
+
+
+--------------------------------------------------------------------------------
+src/main.ts — ponto de entrada
+--------------------------------------------------------------------------------
+
+bootstrap()
+  Cria a app Nest, define prefixo global "api", habilita CORS (origem =
+  FRONTEND_URL ou qualquer), registra ValidationPipe global (whitelist,
+  transform) e HttpExceptionFilter, sobe na porta PORT ou 3000.
+
+
+--------------------------------------------------------------------------------
+src/app/app.module.ts — módulo raiz
+--------------------------------------------------------------------------------
+
+Não tem funções; é um @Module que:
+- Carrega ConfigModule global (lê .env)
+- Configura TypeOrmModule com Postgres (via DATABASE_URL ou variáveis DB_*)
+- Importa LinksModule
+- Registra AppController e AppService
+
+
+--------------------------------------------------------------------------------
+src/app/app.controller.ts
+--------------------------------------------------------------------------------
+
+getHealth()
+  GET /api — health check; delega para AppService.getHealth().
+
+
+--------------------------------------------------------------------------------
+src/app/app.service.ts
+--------------------------------------------------------------------------------
+
+getHealth()
+  Retorna { status: 'ok' } para verificar se a API está no ar.
+
+
+--------------------------------------------------------------------------------
+src/links/links.module.ts
+--------------------------------------------------------------------------------
+
+Módulo que registra entidade Link, controllers LinksController e
+RedirectController, e provider LinksService.
+
+
+--------------------------------------------------------------------------------
+src/links/link.entity.ts
+--------------------------------------------------------------------------------
+
+Entidade TypeORM que mapeia a tabela links:
+- id (UUID)
+- code (string única, até 8 chars)
+- originalUrl
+- createdAt
+- expiresAt
+
+
+--------------------------------------------------------------------------------
+src/links/dto/create-link.dto.ts
+--------------------------------------------------------------------------------
+
+DTO de validação com class-validator:
+- url — obrigatória, deve ser URL válida (protocolo opcional)
+
+
+--------------------------------------------------------------------------------
+src/links/links.controller.ts
+--------------------------------------------------------------------------------
+
+create(dto)
+  POST /api/links — recebe { url }, chama linksService.create(), retorna HTTP 201.
+
+findAll()
+  GET /api/links — lista links não expirados.
+
+
+--------------------------------------------------------------------------------
+src/links/redirect.controller.ts
+--------------------------------------------------------------------------------
+
+redirect(code, res)
+  GET /api/r/:code — busca o link pelo código e responde com redirect HTTP 302
+  para originalUrl.
+
+
+--------------------------------------------------------------------------------
+src/links/links.service.ts
+--------------------------------------------------------------------------------
+
+create(originalUrl)
+  Normaliza a URL, gera código único, calcula expiresAt, salva no banco e
+  retorna LinkResponse.
+
+findAll()
+  Busca links com expiresAt > agora, ordenados por createdAt DESC, mapeia para
+  LinkResponse[].
+
+findByCode(code)
+  Busca por código; lança NotFoundException se não existir ou estiver expirado.
+
+getExpiryDate() [privada]
+  Calcula data de expiração com base em LINK_EXPIRY_DAYS (padrão 7 dias).
+
+normalizeUrl(url) [privada]
+  Remove espaços; adiciona https:// se não houver protocolo.
+
+generateUniqueCode() [privada]
+  Gera código aleatório de 6 caracteres alfanuméricos; tenta até 10 vezes
+  garantir unicidade.
+
+toResponse(link) [privada]
+  Monta o objeto de resposta com shortUrl usando APP_URL + /r/:code.
+
+
+--------------------------------------------------------------------------------
+src/common/filters/http-exception.filter.ts
+--------------------------------------------------------------------------------
+
+catch(exception, host)
+  Intercepta HttpException e padroniza a resposta JSON:
+  { statusCode, message, error }.
+
+
+================================================================================
+FRONTEND ANGULAR (apps/frontend/)
+================================================================================
+
+--------------------------------------------------------------------------------
+Configuração
+--------------------------------------------------------------------------------
+
+project.json
+  Targets: build, serve (com proxy e dependência da API), lint, serve-static.
+
+proxy.conf.json
+  Em dev, redireciona /api → http://localhost:3000.
+
+tsconfig.json / tsconfig.app.json
+  TypeScript Angular (strict templates, bundler).
+
+eslint.config.mjs
+  ESLint Angular (prefixo "app" em seletores).
+
+
+--------------------------------------------------------------------------------
+src/index.html
+--------------------------------------------------------------------------------
+
+HTML base: título "Encurtador de Links", <app-root>, favicon, lang="pt-BR".
+
+
+--------------------------------------------------------------------------------
+src/styles.css
+--------------------------------------------------------------------------------
+
+Estilos globais: reset, fonte Inter/system-ui, fundo em gradiente, estilos
+base de button, input, a.
+
+
+--------------------------------------------------------------------------------
+src/main.ts — bootstrap
+--------------------------------------------------------------------------------
+
+registerLocaleData(localePt)
+  Registra locale pt-BR para pipes de data.
+
+bootstrapApplication(App, appConfig)
+  Inicia a aplicação Angular standalone.
+
+
+--------------------------------------------------------------------------------
+src/environments/
+--------------------------------------------------------------------------------
+
+environment.ts
+  Dev: apiUrl: '/api' (usa o proxy).
+
+environment.prod.ts
+  Produção: aponta para a API no Render.
+
+
+--------------------------------------------------------------------------------
+src/app/app.ts — componente raiz
+--------------------------------------------------------------------------------
+
+Componente App com seletor app-root; importa RouterModule e renderiza o
+template app.html. Não tem métodos próprios.
+
+
+--------------------------------------------------------------------------------
+src/app/app.html
+--------------------------------------------------------------------------------
+
+Contém apenas <router-outlet> — onde as rotas são renderizadas.
+
+
+--------------------------------------------------------------------------------
+src/app/app.config.ts
+--------------------------------------------------------------------------------
+
+Define providers da aplicação:
+- LOCALE_ID = pt-BR
+- provideBrowserGlobalErrorListeners()
+- provideHttpClient()
+- provideRouter(appRoutes)
+
+
+--------------------------------------------------------------------------------
+src/app/app.routes.ts
+--------------------------------------------------------------------------------
+
+Define uma rota: '' → HomeComponent.
+
+
+--------------------------------------------------------------------------------
+src/app/models/link.model.ts
+--------------------------------------------------------------------------------
+
+Tipos TypeScript:
+- Link — formato retornado pela API
+- ApiError — formato de erro da API
+
+
+--------------------------------------------------------------------------------
+src/app/services/links-api.service.ts
+--------------------------------------------------------------------------------
+
+create(url)
+  POST /api/links com { url }; retorna Observable<Link>.
+
+findAll()
+  GET /api/links; retorna Observable<Link[]>.
+
+handleError(error) [privada]
+  Converte erro HTTP em Observable que emite Error.
+
+toErrorMessage(error) [privada]
+  Extrai mensagem amigável: corpo da API, erro de conexão (status 0) ou
+  mensagem genérica.
+
+
+--------------------------------------------------------------------------------
+src/app/pages/home/home.component.ts
+--------------------------------------------------------------------------------
+
+links (signal)
+  Lista de links exibida na tela.
+
+loading (signal)
+  Indica envio do formulário em andamento.
+
+listLoading (signal)
+  Indica carregamento da lista.
+
+errorMessage / successMessage (signals)
+  Feedback ao usuário.
+
+copiedCode (signal)
+  Código do link copiado (para mostrar "Copiado!").
+
+form
+  Formulário reativo com campo url (obrigatório, padrão \S+\.\S+).
+
+ngOnInit()
+  Ao iniciar, chama loadLinks().
+
+submit()
+  Valida o form, chama API para criar link, adiciona na lista e mostra
+  sucesso/erro.
+
+loadLinks()
+  Busca todos os links da API e atualiza o signal links.
+
+copyShortUrl(link)
+  Copia shortUrl para a área de transferência; mostra "Copiado!" por 2s.
+
+isInvalid()
+  Retorna true se o campo URL foi tocado e está inválido.
+
+
+--------------------------------------------------------------------------------
+src/app/pages/home/home.component.html
+--------------------------------------------------------------------------------
+
+Template da página principal:
+- Hero com título e descrição
+- Formulário para encurtar URL
+- Alertas de erro/sucesso
+- Lista de links com data de expiração, URL original e botão copiar
+
+
+--------------------------------------------------------------------------------
+src/app/pages/home/home.component.css
+--------------------------------------------------------------------------------
+
+Estilos da home: layout centralizado, cards, formulário em grid, lista de
+links, responsivo em mobile.
+
+
+================================================================================
+COMO AS PEÇAS SE CONECTAM
+================================================================================
+
+1. Dev local:
+   npm run db:up sobe o Postgres
+   npm run start:api (porta 3000)
+   npm run start (Angular na 4200, proxy /api → API)
+
+2. Criar link:
+   Angular POST /api/links
+   → LinksController.create()
+   → LinksService.create()
+   → salva no banco
+   → retorna shortUrl
+
+3. Redirecionar:
+   visitante acessa https://.../api/r/abc123
+   → RedirectController.redirect()
+   → findByCode()
+   → HTTP 302
+
+4. Produção:
+   frontend na Vercel chama API no Render
+   banco via DATABASE_URL
+   CORS liberado para FRONTEND_URL
