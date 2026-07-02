@@ -1,12 +1,13 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, throwError } from 'rxjs';
+import { environment } from '../../environments/environment';
 import { ApiError, Link } from '../models/link.model';
 
 @Injectable({ providedIn: 'root' })
 export class LinksApiService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = '/api/links';
+  private readonly baseUrl = `${environment.apiUrl}/links`;
 
   create(url: string): Observable<Link> {
     return this.http

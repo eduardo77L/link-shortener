@@ -10,7 +10,8 @@ services:
       POSTGRES_PASSWORD: linkshortener
       POSTGRES_DB: linkshortener
     volumes:
-      - postgres_data:/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
 
 volumes:
   postgres_data:

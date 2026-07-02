@@ -7,8 +7,12 @@
     "start:api": "nx serve api",
     "start:frontend": "nx serve frontend",
     "build": "nx run-many -t build -p frontend,api",
+    "build:frontend": "nx build frontend --configuration=production",
+    "build:api": "nx build api",
     "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:psql": "docker exec -it link-shortener-db psql -U linkshortener -d linkshortener"
   },
   "private": true,
   "devDependencies": {
