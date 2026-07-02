@@ -52,11 +52,11 @@ export class LinksService {
     const link = await this.linksRepository.findOne({ where: { code } });
 
     if (!link) {
-      throw new NotFoundException('Link not found');
+      throw new NotFoundException('Link não encontrado');
     }
 
     if (link.expiresAt <= new Date()) {
-      throw new NotFoundException('Link expired');
+      throw new NotFoundException('Link expirado');
     }
 
     return link;
@@ -94,7 +94,7 @@ export class LinksService {
       }
     }
 
-    throw new ConflictException('Could not generate a unique code');
+    throw new ConflictException('Não foi possível gerar um código único');
   }
 
   private toResponse(link: Link): LinkResponse {

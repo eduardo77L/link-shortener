@@ -35,7 +35,9 @@ export class HomeComponent implements OnInit {
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.errorMessage.set('Enter a valid URL (e.g. google.com or https://google.com)');
+      this.errorMessage.set(
+        'Informe uma URL válida (ex.: google.com ou https://google.com)',
+      );
       return;
     }
 
@@ -45,7 +47,7 @@ export class HomeComponent implements OnInit {
       next: (link) => {
         this.links.update((current) => [link, ...current]);
         this.form.reset();
-        this.successMessage.set('Link shortened successfully.');
+        this.successMessage.set('Link encurtado com sucesso.');
         this.loading.set(false);
       },
       error: (error: Error) => {
@@ -76,7 +78,7 @@ export class HomeComponent implements OnInit {
       this.copiedCode.set(link.code);
       setTimeout(() => this.copiedCode.set(null), 2000);
     } catch {
-      this.errorMessage.set('Could not copy to clipboard.');
+      this.errorMessage.set('Não foi possível copiar para a área de transferência.');
     }
   }
 

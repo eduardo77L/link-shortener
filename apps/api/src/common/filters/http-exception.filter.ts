@@ -19,7 +19,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       typeof exceptionResponse === 'string'
         ? exceptionResponse
         : ((exceptionResponse as { message?: string | string[] }).message ??
-          'Request failed');
+          'Falha na requisição');
 
     response.status(status).json({
       statusCode: status,

@@ -32,11 +32,11 @@ export class LinksApiService {
         return body.message;
       }
       if (error.status === 0) {
-        return 'Could not reach the API. Is the server running?';
+        return 'Não foi possível conectar à API. O servidor está rodando?';
       }
-      return `Request failed (${error.status})`;
+      return `Falha na requisição (${error.status})`;
     }
 
-    return 'Something went wrong. Please try again.';
+    return 'Algo deu errado. Tente novamente.';
   }
 }
