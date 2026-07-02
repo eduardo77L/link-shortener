@@ -3,6 +3,7 @@ export type Link = {
   originalUrl: string;
   shortUrl: string;
   createdAt: string;
+  expiresAt: string;
 };
 
 export type ApiError = {

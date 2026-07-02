@@ -56,7 +56,7 @@
               <a [href]="link.shortUrl" target="_blank" rel="noopener">
                 {{ link.shortUrl }}
               </a>
-              <span class="date">{{ link.createdAt | date: 'medium' }}</span>
+              <span class="date">Expires {{ link.expiresAt | date: 'medium' }}</span>
             </div>
             <p class="original-url" [title]="link.originalUrl">
               {{ link.originalUrl }}

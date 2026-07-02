@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { Link } from './link.entity';
 
 export type LinkResponse = {
@@ -13,6 +13,7 @@ export type LinkResponse = {
   originalUrl: string;
   shortUrl: string;
   createdAt: Date;
+  expiresAt: Date;
 };
 
 @Injectable()
@@ -26,10 +27,12 @@ export class LinksService {
   async create(originalUrl: string): Promise<LinkResponse> {
     const normalizedUrl = this.normalizeUrl(originalUrl);
     const code = await this.generateUniqueCode();
+    const expiresAt = this.getExpiryDate();
 
     const link = this.linksRepository.create({
       code,
       originalUrl: normalizedUrl,
+      expiresAt,
     });
 
     const saved = await this.linksRepository.save(link);
@@ -38,6 +41,7 @@ export class LinksService {
 
   async findAll(): Promise<LinkResponse[]> {
     const links = await this.linksRepository.find({
+      where: { expiresAt: MoreThan(new Date()) },
       order: { createdAt: 'DESC' },
     });
 
@@ -51,7 +55,19 @@ export class LinksService {
       throw new NotFoundException('Link not found');
     }
 
+    if (link.expiresAt <= new Date()) {
+      throw new NotFoundException('Link expired');
+    }
+
     return link;
+  }
+
+  private getExpiryDate(): Date {
+    const expiryDays =
+      Number(this.configService.get('LINK_EXPIRY_DAYS', 7)) || 7;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + expiryDays);
+    return expiresAt;
   }
 
   private normalizeUrl(url: string): string {
@@ -92,6 +108,7 @@ export class LinksService {
       originalUrl: link.originalUrl,
       shortUrl: `${baseUrl.replace(/\/$/, '')}/r/${link.code}`,
       createdAt: link.createdAt,
+      expiresAt: link.expiresAt,
     };
   }
 }
